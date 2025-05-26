@@ -56,156 +56,75 @@ label {
   color: #495057;
 }
 
-.timestamp-display {
-  font-weight: 600;
-  color: #007bff;
-  font-size: 18px;
-}
 
-/* Timeline Styles */
-.timeline-container {
-  margin: 20px 0;
-  border-radius: 8px;
-  overflow: visible;
-  border: 2px solid #dee2e6;
-  background: #f8f9fa;
-  position: relative;
-}
 
-.timeline-thumbnails {
+/* Thumbnail Generator Styles */
+.thumbnail-generator {
   display: flex;
-  height: 80px;
-  position: relative;
-  cursor: pointer;
-  user-select: none;
-  overflow: hidden;
-}
-
-/* Hover Preview Popup */
-.hover-preview {
-  position: absolute;
-  bottom: calc(100% + 15px);
-  left: 0;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.95);
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 15px;
+  background: #f8f9fa;
   border-radius: 8px;
-  padding: 12px;
-  pointer-events: none;
-  z-index: 100;
-  opacity: 0;
-  transition: opacity 0.1s ease;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  min-width: 120px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  backdrop-filter: blur(4px);
+  border: 1px solid #dee2e6;
 }
 
-.hover-preview.show {
-  opacity: 1 !important;
-}
-
-.hover-preview img {
-  display: block;
-  width: 100px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  background: #f0f0f0;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.hover-preview .time-display {
-  color: white;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: center;
-  white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-
-.timeline-thumbnail {
-  flex: 1;
-  height: 100%;
-  background: #e9ecef;
-  border-right: 1px solid #dee2e6;
-  position: relative;
-  overflow: hidden;
-}
-
-.timeline-thumbnail:last-child {
-  border-right: none;
-}
-
-.timeline-thumbnail img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.timeline-thumbnail img.loaded {
-  opacity: 1;
-}
-
-.timeline-thumbnail .loading {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 12px;
-  color: #6c757d;
-}
-
-.timeline-thumbnail .time-label {
-  position: absolute;
-  bottom: 2px;
-  left: 2px;
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 1px 4px;
-  border-radius: 2px;
-  font-size: 10px;
+.thumbnail-generator label {
+  margin: 0;
+  color: #495057;
   font-weight: 500;
+  white-space: nowrap;
 }
 
-.timeline-scrubber {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: #007bff;
-  z-index: 10;
-  pointer-events: none;
-  box-shadow: 0 0 4px rgba(0, 123, 255, 0.5);
+#timestampInput {
+  width: 120px;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
 }
 
-.timeline-scrubber::before {
-  content: "";
-  position: absolute;
-  top: -6px;
-  left: -4px;
-  width: 11px;
-  height: 11px;
-  background: #007bff;
-  border-radius: 50%;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+#timestampInput:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
 }
 
-.timeline-scrubber::after {
-  content: "";
-  position: absolute;
-  bottom: -6px;
-  left: -4px;
-  width: 11px;
-  height: 11px;
+.generate-btn {
+  padding: 8px 16px;
   background: #007bff;
-  border-radius: 50%;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
+
+.generate-btn:hover {
+  background: #0056b3;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.generate-btn:active {
+  transform: translateY(0);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.generate-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+
 
 .btn {
   background: #007bff;
@@ -313,12 +232,7 @@ label {
   display: none;
 }
 
-.current-time-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
+
 
 /* Hide the video element but keep it functional */
 #videoElement {

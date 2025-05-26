@@ -29,27 +29,20 @@
 
       <div class="controls">
         <div class="control-group">
-          <div class="current-time-info">
-            <label>Current Timestamp:</label>
-            <span class="timestamp-display" id="timestampDisplay">0.0s</span>
+          <div class="thumbnail-generator">
+            <label for="timestampInput">Generate Thumbnail at (seconds):</label>
+            <input 
+              type="number" 
+              id="timestampInput" 
+              placeholder="10" 
+              value="10"
+              min="0"
+              step="0.1"
+            />
+            <button id="generateThumbnailBtn" class="generate-btn">Generate Thumbnail</button>
           </div>
 
-          <div class="timeline-container" id="timelineContainer">
-            <div class="timeline-thumbnails" id="timelineThumbnails">
-              <!-- Timeline thumbnails will be generated here -->
-              <div class="timeline-scrubber" id="timelineScrubber"></div>
-            </div>
 
-            <!-- Hover Preview Popup -->
-            <div class="hover-preview" id="hoverPreview">
-              <img
-                id="hoverPreviewImg"
-                alt="Preview"
-                src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjY4IiB2aWV3Qm94PSIwIDAgMTIwIDY4IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTIwIiBoZWlnaHQ9IjY4IiBmaWxsPSIjRTlFQ0VGIi8+CjxwYXRoIGQ9Ik01MCAzOEw2MCAzMUw2MCA0NUw1MCAzOFoiIGZpbGw9IiM2Qzc1N0QiLz4KPHN2Zz4K"
-              />
-              <div class="time-display" id="hoverPreviewTime">0:00</div>
-            </div>
-          </div>
         </div>
 
         <div class="progress-bar hidden" id="progressBar">

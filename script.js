@@ -1,20 +1,13 @@
 document.addEventListener("DOMContentLoaded", () => {
   const VideoThumbnailGenerator = {
     videoUrl: "",
-
-    currentTime: 0,
     duration: 0,
-    isDragging: false,
-    thumbnailSegments: 10,
-    hoverPreviewCache: new Map(),
-    hoverThrottleTimer: null,
-    hoverDebounceTimer: null,
-    pendingThumbnailGeneration: null,
-    thumbnailCache: new Map(),
+    downloadedBytes: 0,
 
     init: function () {
       this.bindEvents();
       this.initializeVideoUrl();
+      this.setupNetworkMonitoring();
     },
 
     bindEvents: function () {
@@ -33,51 +26,22 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         });
 
-      // Timeline events
+      // Thumbnail generation events
       document
-        .getElementById("timelineThumbnails")
-        .addEventListener("mousedown", (e) => {
-          this.startDragging(e);
+        .getElementById("generateThumbnailBtn")
+        .addEventListener("click", () => {
+          this.handleGenerateThumbnail();
         });
 
-      document.addEventListener("mousemove", (e) => {
-        if (this.isDragging) {
-          this.handleDrag(e);
-        }
-      });
-
-      document.addEventListener("mouseup", () => {
-        this.stopDragging();
-      });
-
       document
-        .getElementById("timelineThumbnails")
-        .addEventListener("click", (e) => {
-          if (!this.isDragging) {
-            this.handleTimelineClick(e);
+        .getElementById("timestampInput")
+        .addEventListener("keypress", (e) => {
+          if (e.key === "Enter") {
+            this.handleGenerateThumbnail();
           }
         });
 
-      // Hover preview events
-      document
-        .getElementById("timelineThumbnails")
-        .addEventListener("mouseenter", () => {
-          this.showHoverPreview();
-        });
 
-      document
-        .getElementById("timelineThumbnails")
-        .addEventListener("mouseleave", () => {
-          this.hideHoverPreview();
-        });
-
-      document
-        .getElementById("timelineThumbnails")
-        .addEventListener("mousemove", (e) => {
-          if (!this.isDragging) {
-            this.throttledUpdateHoverPreview(e);
-          }
-        });
 
       // Video events
       document
@@ -86,7 +50,7 @@ document.addEventListener("DOMContentLoaded", () => {
           this.handleVideoMetadata();
         });
 
-            document.getElementById("videoElement").addEventListener("error", (e) => {
+      document.getElementById("videoElement").addEventListener("error", (e) => {
         console.log("Video error event:", e);
         console.log("Video error object:", e.target.error);
         this.handleError(
@@ -140,6 +104,23 @@ document.addEventListener("DOMContentLoaded", () => {
       this.loadVideo();
     },
 
+    handleGenerateThumbnail: function () {
+      const timestampInput = document.getElementById("timestampInput");
+      const timestamp = parseFloat(timestampInput.value) || 10;
+      
+      if (timestamp < 0) {
+        this.updateStatus("Timestamp must be 0 or greater", "error");
+        return;
+      }
+      
+      if (this.duration > 0 && timestamp > this.duration) {
+        this.updateStatus(`Timestamp cannot exceed video duration (${this.duration.toFixed(1)}s)`, "error");
+        return;
+      }
+      
+      this.generateHighQualityThumbnail(timestamp);
+    },
+
     isValidVideoUrl: function (url) {
       try {
         const urlObj = new URL(url);
@@ -159,39 +140,13 @@ document.addEventListener("DOMContentLoaded", () => {
     },
 
     resetState: function () {
-      // Clear caches
-      this.thumbnailCache.clear();
-      this.hoverPreviewCache.clear();
-      
       // Reset video state
-      this.currentTime = 0;
       this.duration = 0;
-      this.isDragging = false;
-      
-      // Clear timers
-      if (this.hoverThrottleTimer) {
-        clearTimeout(this.hoverThrottleTimer);
-        this.hoverThrottleTimer = null;
-      }
-      
-      if (this.hoverDebounceTimer) {
-        clearTimeout(this.hoverDebounceTimer);
-        this.hoverDebounceTimer = null;
-      }
-      
-      // Clear pending generation
-      if (this.pendingThumbnailGeneration) {
-        this.pendingThumbnailGeneration.cancelled = true;
-        this.pendingThumbnailGeneration = null;
-      }
+      this.downloadedBytes = 0;
       
       // Clear UI
-      document.getElementById("timelineThumbnails").innerHTML = 
-        '<div class="timeline-scrubber" id="timelineScrubber"></div>';
       document.getElementById("mainThumbnail").classList.remove("show");
-      document.getElementById("timestampDisplay").textContent = "0.0s";
       document.getElementById("videoInfo").innerHTML = "";
-      this.hideHoverPreview();
     },
 
     loadVideo: function () {
@@ -235,6 +190,10 @@ document.addEventListener("DOMContentLoaded", () => {
       const videoWidth = video.videoWidth;
       const videoHeight = video.videoHeight;
 
+      // Update timestamp input max value
+      const timestampInput = document.getElementById("timestampInput");
+      timestampInput.max = this.duration;
+
       // Fetch file size and update video info
       this.fetchFileSize((fileSize) => {
         const fileSizeText = fileSize
@@ -250,7 +209,20 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
       });
 
-      this.generateTimelineThumbnails();
+      this.updateStatus("Video loaded successfully! Generating initial thumbnail...", "success");
+      
+      // Re-enable load button
+      const loadBtn = document.getElementById("loadVideoBtn");
+      loadBtn.disabled = false;
+      loadBtn.textContent = "Load Video";
+      
+      // Set up progress tracking for this video
+      this.trackVideoProgress();
+      
+      // Auto-generate thumbnail at default timestamp (10s)
+      const defaultTimestamp = Math.min(10, this.duration);
+      document.getElementById("timestampInput").value = defaultTimestamp;
+      this.generateHighQualityThumbnail(defaultTimestamp);
     },
 
     fetchFileSize: function (callback) {
@@ -279,121 +251,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
     },
 
-    generateTimelineThumbnails: function () {
-      this.updateStatus("Generating timeline thumbnails...");
 
-      const timelineThumbnails = document.getElementById("timelineThumbnails");
-      timelineThumbnails.innerHTML =
-        '<div class="timeline-scrubber" id="timelineScrubber"></div>';
-
-      const segmentDuration = this.duration / this.thumbnailSegments;
-      let loadedCount = 0;
-
-      for (let i = 0; i < this.thumbnailSegments; i++) {
-        const timestamp = (i + 0.5) * segmentDuration;
-        const thumbnailDiv = document.createElement("div");
-        thumbnailDiv.className = "timeline-thumbnail";
-
-        const loadingDiv = document.createElement("div");
-        loadingDiv.className = "loading";
-        loadingDiv.textContent = "Loading...";
-
-        const img = document.createElement("img");
-        const timeLabel = document.createElement("div");
-        timeLabel.className = "time-label";
-        timeLabel.textContent = this.formatTime(timestamp);
-
-        thumbnailDiv.appendChild(loadingDiv);
-        thumbnailDiv.appendChild(img);
-        thumbnailDiv.appendChild(timeLabel);
-
-        timelineThumbnails.appendChild(thumbnailDiv);
-
-        // Use the optimized thumbnail generation
-        this.generateThumbnailAtTime(timestamp, (dataUrl) => {
-          img.src = dataUrl;
-          img.classList.add("loaded");
-          loadingDiv.style.display = "none";
-          loadedCount++;
-
-          this.updateProgress(50 + (loadedCount / this.thumbnailSegments) * 50);
-
-          if (loadedCount === this.thumbnailSegments) {
-            this.updateStatus(
-              "Timeline ready! Click or drag to scrub through the video.",
-              "success"
-            );
-            this.hideProgress();
-            
-            // Re-enable load button
-            const loadBtn = document.getElementById("loadVideoBtn");
-            loadBtn.disabled = false;
-            loadBtn.textContent = "Load Video";
-          }
-        });
-      }
-    },
-
-    generateThumbnailAtTime: function (timestamp, callback) {
-      // Check cache first
-      const cacheKey = timestamp.toFixed(3);
-      if (this.thumbnailCache.has(cacheKey)) {
-        callback(this.thumbnailCache.get(cacheKey));
-        return;
-      }
-
-      // Always use temporary video for simplicity
-      this.generateThumbnailWithTempVideo(
-        timestamp,
-        (dataUrl) => {
-          // Cache the result
-          this.thumbnailCache.set(cacheKey, dataUrl);
-          callback(dataUrl);
-        },
-        (error) => {
-          console.error("Failed to generate thumbnail:", error);
-        }
-      );
-    },
-
-    startDragging: function (e) {
-      this.isDragging = true;
-      this.handleTimelineClick(e);
-    },
-
-    stopDragging: function () {
-      this.isDragging = false;
-    },
-
-    handleDrag: function (e) {
-      this.handleTimelineClick(e);
-    },
-
-    handleTimelineClick: function (e) {
-      const rect = document
-        .getElementById("timelineThumbnails")
-        .getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const percentage = Math.max(0, Math.min(1, x / rect.width));
-
-      this.currentTime = percentage * this.duration;
-      this.updateTimestampDisplay();
-      this.updateScrubberPosition();
-
-      // Generate high-quality thumbnail immediately
-      this.generateHighQualityThumbnail();
-    },
-
-    updateTimestampDisplay: function () {
-      document.getElementById("timestampDisplay").textContent = this.formatTime(
-        this.currentTime
-      );
-    },
-
-    updateScrubberPosition: function () {
-      const percentage = (this.currentTime / this.duration) * 100;
-      document.getElementById("timelineScrubber").style.left = `${percentage}%`;
-    },
 
     formatTime: function (seconds) {
       const mins = Math.floor(seconds / 60);
@@ -401,32 +259,27 @@ document.addEventListener("DOMContentLoaded", () => {
       return mins > 0 ? `${mins}:${secs.padStart(4, "0")}` : `${secs}s`;
     },
 
-    generateHighQualityThumbnail: function () {
-      if (isNaN(this.currentTime)) {
+    generateHighQualityThumbnail: function (timestamp) {
+      if (isNaN(timestamp)) {
         this.handleError(
           "Invalid timestamp",
-          new Error("Please select a timestamp on the timeline")
+          new Error("Please enter a valid timestamp")
         );
         return;
       }
 
+      this.updateStatus("Generating thumbnail...");
       document.getElementById("mainThumbnail").classList.remove("show");
 
       const video = document.getElementById("videoElement");
-
-      const seekTimeout = setTimeout(() => {
-        this.handleError(
-          "Timeout",
-          new Error("Seeking to the requested timestamp timed out.")
-        );
-      }, 30000);
+      const startTime = performance.now();
+      const initialDownloadedBytes = this.downloadedBytes;
 
       const seekAndCapture = () => {
         try {
-          video.currentTime = this.currentTime;
+          video.currentTime = timestamp;
 
           const seekedHandler = () => {
-            clearTimeout(seekTimeout);
             video.removeEventListener("seeked", seekedHandler);
 
             try {
@@ -438,11 +291,34 @@ document.addEventListener("DOMContentLoaded", () => {
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
               const dataUrl = canvas.toDataURL("image/png");
+              
               document.getElementById("mainThumbnail").src = dataUrl;
               document.getElementById("mainThumbnail").classList.add("show");
 
-              // Remove the success message - just clear the status
-              this.updateStatus("", "");
+              const thumbnailWidth = canvas.width;
+              const thumbnailHeight = canvas.height;
+              
+              // Calculate data downloaded for this specific seek operation
+              const seekDownloadedBytes = this.downloadedBytes - initialDownloadedBytes;
+              const downloadedMB = (seekDownloadedBytes / (1024 * 1024)).toFixed(2);
+              
+              console.log(`Thumbnail generation complete:`, {
+                timestamp: timestamp,
+                initialBytes: initialDownloadedBytes,
+                finalBytes: this.downloadedBytes,
+                downloaded: seekDownloadedBytes,
+                downloadedMB: downloadedMB
+              });
+              
+              // Add note if no data was downloaded
+              let statusMessage = `Thumbnail generated at ${this.formatTime(timestamp)} | Data chunk downloaded for thumbnail: ${downloadedMB}MB`;
+              if (seekDownloadedBytes === 0) {
+                statusMessage += ' (from cache)';
+              }
+              statusMessage += ` | Resolution: ${thumbnailWidth}×${thumbnailHeight}`;
+              
+              this.updateStatus(statusMessage, "success");
+              this.hideProgress();
             } catch (error) {
               this.handleError("Canvas error", error);
             }
@@ -452,7 +328,6 @@ document.addEventListener("DOMContentLoaded", () => {
             once: true,
           });
         } catch (error) {
-          clearTimeout(seekTimeout);
           this.handleError("Seeking error", error);
         }
       };
@@ -475,180 +350,99 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     },
 
-    // Hover Preview Functions
-    showHoverPreview: function () {
-      document.getElementById("hoverPreview").classList.add("show");
+    setupNetworkMonitoring: function() {
+      // Monitor network requests using PerformanceObserver to track actual downloads
+      if ('PerformanceObserver' in window) {
+        const observer = new PerformanceObserver((list) => {
+          const entries = list.getEntries();
+          entries.forEach((entry) => {
+            if (entry.name.includes(this.videoUrl)) {
+              console.log('Network entry for video:', {
+                name: entry.name,
+                transferSize: entry.transferSize,
+                encodedBodySize: entry.encodedBodySize,
+                decodedBodySize: entry.decodedBodySize,
+                startTime: entry.startTime,
+                responseEnd: entry.responseEnd
+              });
+              
+              // Track transfer size from performance entries
+              if (entry.transferSize > 0) {
+                this.downloadedBytes += entry.transferSize;
+                console.log(`✅ Downloaded ${entry.transferSize} bytes (Total: ${this.downloadedBytes} bytes)`);
+              } else if (entry.encodedBodySize > 0) {
+                // Fallback to encoded body size if transfer size not available
+                this.downloadedBytes += entry.encodedBodySize;
+                console.log(`✅ Downloaded ${entry.encodedBodySize} bytes via encodedBodySize (Total: ${this.downloadedBytes} bytes)`);
+              } else {
+                console.log(`⚠️ Network request detected but no size info available (likely cached)`);
+              }
+            }
+          });
+        });
+        observer.observe({ entryTypes: ['resource'] });
+        this.performanceObserver = observer;
+      } else {
+        console.warn('PerformanceObserver not supported - cannot track detailed network usage');
+      }
     },
 
-    hideHoverPreview: function () {
-      document.getElementById("hoverPreview").classList.remove("show");
 
-      if (this.hoverThrottleTimer) {
-        clearTimeout(this.hoverThrottleTimer);
-        this.hoverThrottleTimer = null;
-      }
 
-      if (this.hoverDebounceTimer) {
-        clearTimeout(this.hoverDebounceTimer);
-        this.hoverDebounceTimer = null;
-      }
-
-      if (this.pendingThumbnailGeneration) {
-        this.pendingThumbnailGeneration.cancelled = true;
-
-        // Clean up any temporary video from the cancelled request
-        if (this.pendingThumbnailGeneration.tempVideo) {
-          if (
-            document.body.contains(this.pendingThumbnailGeneration.tempVideo)
-          ) {
-            document.body.removeChild(
-              this.pendingThumbnailGeneration.tempVideo
-            );
+    trackVideoProgress: function() {
+      const video = document.getElementById("videoElement");
+      
+      // Reset tracking for new video
+      this.downloadedBytes = 0;
+      let lastBufferedEnd = 0;
+      
+      // Track initial load
+      const progressHandler = () => {
+        if (video.buffered.length > 0) {
+          const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+          
+          // Only update if buffer has grown
+          if (bufferedEnd > lastBufferedEnd) {
+            const bufferGrowth = bufferedEnd - lastBufferedEnd;
+            
+            // Get estimated file size from video info to calculate bytes per second
+            const videoInfo = document.getElementById("videoInfo").innerHTML;
+            const fileSizeMatch = videoInfo.match(/(\d+(?:\.\d+)?)\s*(KB|MB|GB)/);
+            
+            if (fileSizeMatch && this.duration) {
+              const size = parseFloat(fileSizeMatch[1]);
+              const unit = fileSizeMatch[2];
+              
+              let sizeInBytes = size;
+              if (unit === 'KB') sizeInBytes = size * 1024;
+              if (unit === 'MB') sizeInBytes = size * 1024 * 1024;
+              if (unit === 'GB') sizeInBytes = size * 1024 * 1024 * 1024;
+              
+              // Calculate bytes per second
+              const bytesPerSecond = sizeInBytes / this.duration;
+              const additionalBytes = Math.round(bufferGrowth * bytesPerSecond);
+              this.downloadedBytes += additionalBytes;
+              
+              console.log(`Buffer grew by ${bufferGrowth.toFixed(2)}s, estimated ${additionalBytes} bytes downloaded (Total: ${this.downloadedBytes})`);
+            }
+            
+            lastBufferedEnd = bufferedEnd;
           }
         }
-
-        this.pendingThumbnailGeneration = null;
-      }
-    },
-
-    throttledUpdateHoverPreview: function (e) {
-      if (this.hoverThrottleTimer) return;
-
-      this.hoverThrottleTimer = setTimeout(() => {
-        this.hoverThrottleTimer = null;
-        this.updateHoverPreview(e);
-      }, 50);
-    },
-
-    updateHoverPreview: function (e) {
-      const rect = document
-        .getElementById("timelineThumbnails")
-        .getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const percentage = Math.max(0, Math.min(1, x / rect.width));
-      const hoverTime = percentage * this.duration;
-
-      // Position the hover preview
-      const previewWidth = 120;
-      const constrainedX = Math.max(
-        previewWidth / 2,
-        Math.min(rect.width - previewWidth / 2, x)
-      );
-      document.getElementById("hoverPreview").style.left = `${constrainedX}px`;
-
-      // Update time display
-      document.getElementById("hoverPreviewTime").textContent =
-        this.formatTime(hoverTime);
-
-      // Show the preview
-      document.getElementById("hoverPreview").classList.add("show");
-
-      // Generate thumbnail
-      this.debouncedGenerateHoverPreview(hoverTime);
-    },
-
-    debouncedGenerateHoverPreview: function (timestamp) {
-      if (this.hoverDebounceTimer) {
-        console.log(
-          `🚫 Cancelling previous debounce timer for timestamp: ${timestamp.toFixed(
-            3
-          )}s`
-        );
-        clearTimeout(this.hoverDebounceTimer);
-      }
-
-      if (this.pendingThumbnailGeneration) {
-        console.log(
-          `❌ Cancelling pending thumbnail generation for timestamp: ${timestamp.toFixed(
-            3
-          )}s`
-        );
-        this.pendingThumbnailGeneration.cancelled = true;
-
-        // Clean up any temporary video from the cancelled request
-        if (this.pendingThumbnailGeneration.tempVideo) {
-          if (
-            document.body.contains(this.pendingThumbnailGeneration.tempVideo)
-          ) {
-            document.body.removeChild(
-              this.pendingThumbnailGeneration.tempVideo
-            );
-          }
-        }
-
-        this.pendingThumbnailGeneration = null;
-      }
-
-      this.hoverDebounceTimer = setTimeout(() => {
-        console.log(
-          `✅ Debounce timer fired! Starting thumbnail generation for: ${timestamp.toFixed(
-            3
-          )}s`
-        );
-        this.hoverDebounceTimer = null;
-        this.generateHoverPreview(timestamp);
-      }, 100);
-    },
-
-    generateHoverPreview: function (timestamp) {
-      // Use exact timestamp as cache key (no rounding)
-      const cacheKey = timestamp.toFixed(3);
-
-      // Check cache first
-      if (this.hoverPreviewCache.has(cacheKey)) {
-        console.log(`💾 Using cached thumbnail for: ${timestamp.toFixed(3)}s`);
-        document.getElementById("hoverPreviewImg").src =
-          this.hoverPreviewCache.get(cacheKey);
-        document.getElementById("hoverPreviewImg").style.opacity = "1";
-        return;
-      }
-
-      console.log(`🎬 Generating NEW thumbnail for: ${timestamp.toFixed(3)}s`);
-      // Show loading state
-      document.getElementById("hoverPreviewImg").style.opacity = "0.8";
-
-      // Create cancellation token
-      const generationToken = { cancelled: false };
-      this.pendingThumbnailGeneration = generationToken;
-
-      // Generate immediately with shared video
-      this.generateThumbnailWithTempVideo(
-        timestamp,
-        (dataUrl) => {
-          if (generationToken.cancelled) {
-            console.log(
-              `🔄 Thumbnail generation completed but was cancelled for: ${timestamp.toFixed(
-                3
-              )}s`
-            );
-            return;
-          }
-
-          console.log(
-            `🎉 Thumbnail generation completed successfully for: ${timestamp.toFixed(
-              3
-            )}s`
-          );
-          // Cache the result in hover preview cache
-          this.hoverPreviewCache.set(cacheKey, dataUrl);
-
-          // Update preview if still relevant
-          if (!generationToken.cancelled) {
-            document.getElementById("hoverPreviewImg").src = dataUrl;
-            document.getElementById("hoverPreviewImg").style.opacity = "1";
-          }
-
-          if (this.pendingThumbnailGeneration === generationToken) {
-            this.pendingThumbnailGeneration = null;
-          }
-        },
-        (error) => {
-          if (this.pendingThumbnailGeneration === generationToken) {
-            this.pendingThumbnailGeneration = null;
-          }
-          console.error("Failed to generate hover preview:", error);
-        }
-      );
+      };
+      
+      video.addEventListener('progress', progressHandler);
+      
+             // Track seeking events
+       video.addEventListener('seeking', () => {
+         console.log('Video seeking - may trigger additional downloads');
+       });
+       
+       video.addEventListener('seeked', () => {
+         console.log('Video seek completed');
+         // Trigger progress check after seek with some delay for network requests
+         setTimeout(progressHandler, 200);
+       });
     },
 
     // Utility Functions
@@ -662,9 +456,7 @@ document.addEventListener("DOMContentLoaded", () => {
     },
 
     hideProgress: function () {
-      setTimeout(() => {
-        document.getElementById("progressBar").classList.add("hidden");
-      }, 500);
+      document.getElementById("progressBar").classList.add("hidden");
     },
 
     updateProgress: function (percentage) {
@@ -685,109 +477,11 @@ document.addEventListener("DOMContentLoaded", () => {
     },
 
     cleanup: function () {
-      // Clear caches
-      this.thumbnailCache.clear();
-      this.hoverPreviewCache.clear();
-
-      // Clear timers
-      if (this.hoverThrottleTimer) {
-        clearTimeout(this.hoverThrottleTimer);
-        this.hoverThrottleTimer = null;
+      // Clean up performance observer
+      if (this.performanceObserver) {
+        this.performanceObserver.disconnect();
+        this.performanceObserver = null;
       }
-
-      if (this.hoverDebounceTimer) {
-        clearTimeout(this.hoverDebounceTimer);
-        this.hoverDebounceTimer = null;
-      }
-
-      // Clear pending generation
-      this.pendingThumbnailGeneration = null;
-    },
-
-    generateThumbnailWithTempVideo: function (
-      timestamp,
-      successCallback,
-      errorCallback
-    ) {
-      // Create a temporary video element
-      const tempVideo = document.createElement("video");
-      tempVideo.src = this.videoUrl;
-      tempVideo.crossOrigin = "anonymous";
-      tempVideo.muted = true;
-      tempVideo.preload = "metadata";
-      tempVideo.style.position = "absolute";
-      tempVideo.style.opacity = "0";
-      tempVideo.style.pointerEvents = "none";
-      tempVideo.width = 120;
-      tempVideo.height = 68;
-      document.body.appendChild(tempVideo);
-
-      // Store reference to this video in the generation token for cancellation
-      if (this.pendingThumbnailGeneration) {
-        this.pendingThumbnailGeneration.tempVideo = tempVideo;
-      }
-
-      const cleanup = () => {
-        if (document.body.contains(tempVideo)) {
-          document.body.removeChild(tempVideo);
-        }
-      };
-
-      const timeoutId = setTimeout(() => {
-        cleanup();
-        errorCallback &&
-          errorCallback(new Error("Thumbnail generation timeout"));
-      }, 10000);
-
-      tempVideo.addEventListener("loadedmetadata", () => {
-        // Check for cancellation before seeking
-        if (
-          this.pendingThumbnailGeneration &&
-          this.pendingThumbnailGeneration.cancelled
-        ) {
-          clearTimeout(timeoutId);
-          cleanup();
-          return;
-        }
-        tempVideo.currentTime = timestamp;
-      });
-
-      tempVideo.addEventListener("seeked", () => {
-        clearTimeout(timeoutId);
-
-        // Check for cancellation before generating thumbnail
-        if (
-          this.pendingThumbnailGeneration &&
-          this.pendingThumbnailGeneration.cancelled
-        ) {
-          cleanup();
-          return;
-        }
-
-        try {
-          const canvas = document.createElement("canvas");
-          canvas.width = 120;
-          canvas.height = 68;
-
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
-
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
-          cleanup();
-          successCallback(dataUrl);
-        } catch (error) {
-          console.error("Failed to generate thumbnail with temp video:", error);
-          cleanup();
-          errorCallback && errorCallback(error);
-        }
-      });
-
-      tempVideo.addEventListener("error", () => {
-        clearTimeout(timeoutId);
-        cleanup();
-        errorCallback &&
-          errorCallback(new Error("Temporary video failed to load"));
-      });
     },
   };
 
