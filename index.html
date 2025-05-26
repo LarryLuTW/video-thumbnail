@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Video Thumbnail Generator</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎬 Video Thumbnail Generator</h1>
+
+      <div class="video-info" id="videoInfo">
+        <strong>Video URL:</strong>
+        https://customer-uploads.skedsocial.com/64992d1a6c0e18292d05a9fd/96887ea8-2a02-4da8-8789-b0b54a5d4e0b/default.mp4
+      </div>
+
+      <div class="controls">
+        <div class="control-group">
+          <div class="current-time-info">
+            <label>Current Timestamp:</label>
+            <span class="timestamp-display" id="timestampDisplay">0.0s</span>
+          </div>
+
+          <div class="timeline-container" id="timelineContainer">
+            <div class="timeline-thumbnails" id="timelineThumbnails">
+              <!-- Timeline thumbnails will be generated here -->
+              <div class="timeline-scrubber" id="timelineScrubber"></div>
+            </div>
+
+            <!-- Hover Preview Popup -->
+            <div class="hover-preview" id="hoverPreview">
+              <img
+                id="hoverPreviewImg"
+                alt="Preview"
+                src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjY4IiB2aWV3Qm94PSIwIDAgMTIwIDY4IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTIwIiBoZWlnaHQ9IjY4IiBmaWxsPSIjRTlFQ0VGIi8+CjxwYXRoIGQ9Ik01MCAzOEw2MCAzMUw2MCA0NUw1MCAzOFoiIGZpbGw9IiM2Qzc1N0QiLz4KPHN2Zz4K"
+              />
+              <div class="time-display" id="hoverPreviewTime">0:00</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="progress-bar hidden" id="progressBar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+
+      <div class="status loading" id="status">Loading video metadata...</div>
+
+      <div class="main-thumbnail-container">
+        <img
+          class="main-thumbnail"
+          id="mainThumbnail"
+          alt="Generated thumbnail will appear here"
+        />
+      </div>
+
+      <!-- Hidden video element for loading frames -->
+      <video
+        id="videoElement"
+        preload="metadata"
+        crossorigin="anonymous"
+        muted
+      ></video>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
