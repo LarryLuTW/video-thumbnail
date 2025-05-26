@@ -323,9 +323,100 @@ label {
 /* Hide the video element but keep it functional */
 #videoElement {
   position: absolute;
+  opacity: 0;
+  pointer-events: none;
   width: 1px;
   height: 1px;
-  opacity: 0.01;
-  pointer-events: none;
-  overflow: hidden;
+}
+
+/* URL Input Section Styles */
+.url-input-section {
+  margin-bottom: 25px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.input-group label {
+  font-weight: 600;
+  color: #495057;
+  margin-bottom: 8px;
+}
+
+#videoUrlInput {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  background: white;
+}
+
+#videoUrlInput:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+#videoUrlInput:invalid {
+  border-color: #dc3545;
+}
+
+.load-btn {
+  padding: 12px 24px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+  align-self: flex-start;
+}
+
+.load-btn:hover {
+  background: #0056b3;
+  transform: translateY(-1px);
+}
+
+.load-btn:active {
+  transform: translateY(0);
+}
+
+.load-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (min-width: 768px) {
+  .input-group {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  
+  .input-group label {
+    margin-bottom: 0;
+    white-space: nowrap;
+    align-self: center;
+  }
+  
+  #videoUrlInput {
+    flex: 1;
+  }
+  
+  .load-btn {
+    align-self: stretch;
+  }
 }

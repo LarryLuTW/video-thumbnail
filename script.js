@@ -1,7 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
   const VideoThumbnailGenerator = {
-    videoUrl:
-      "https://customer-uploads.skedsocial.com/64992d1a6c0e18292d05a9fd/96887ea8-2a02-4da8-8789-b0b54a5d4e0b/default.mp4",
+    videoUrl: "",
 
     currentTime: 0,
     duration: 0,
@@ -15,10 +14,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
     init: function () {
       this.bindEvents();
-      this.loadVideo();
+      this.initializeVideoUrl();
     },
 
     bindEvents: function () {
+      // URL Input events
+      document
+        .getElementById("loadVideoBtn")
+        .addEventListener("click", () => {
+          this.handleLoadVideo();
+        });
+
+      document
+        .getElementById("videoUrlInput")
+        .addEventListener("keypress", (e) => {
+          if (e.key === "Enter") {
+            this.handleLoadVideo();
+          }
+        });
+
       // Timeline events
       document
         .getElementById("timelineThumbnails")
@@ -72,7 +86,9 @@ document.addEventListener("DOMContentLoaded", () => {
           this.handleVideoMetadata();
         });
 
-      document.getElementById("videoElement").addEventListener("error", (e) => {
+            document.getElementById("videoElement").addEventListener("error", (e) => {
+        console.log("Video error event:", e);
+        console.log("Video error object:", e.target.error);
         this.handleError(
           "Video loading error",
           new Error(
@@ -82,18 +98,125 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     },
 
+    initializeVideoUrl: function () {
+      // Get the URL from the input field (which has the default value)
+      const urlInput = document.getElementById("videoUrlInput");
+      this.videoUrl = urlInput.value.trim();
+      
+      if (this.videoUrl) {
+        this.loadVideo();
+      } else {
+        this.updateStatus("Please enter a valid video URL", "error");
+      }
+    },
+
+    handleLoadVideo: function () {
+      console.log("handleLoadVideo called");
+      const urlInput = document.getElementById("videoUrlInput");
+      const newUrl = urlInput.value.trim();
+      
+      console.log("New URL:", newUrl);
+      
+      if (!newUrl) {
+        this.updateStatus("Please enter a valid video URL", "error");
+        return;
+      }
+      
+      // Basic URL validation
+      if (!this.isValidVideoUrl(newUrl)) {
+        console.log("URL validation failed");
+        this.updateStatus("Please enter a valid video URL (mp4, webm, ogg)", "error");
+        return;
+      }
+      
+      console.log("URL validation passed, resetting state...");
+      
+      // Reset state for new video
+      this.resetState();
+      
+      // Update video URL and load
+      this.videoUrl = newUrl;
+      console.log("Loading video with URL:", this.videoUrl);
+      this.loadVideo();
+    },
+
+    isValidVideoUrl: function (url) {
+      try {
+        const urlObj = new URL(url);
+        const validExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi'];
+        const extension = urlObj.pathname.toLowerCase().substring(urlObj.pathname.lastIndexOf('.'));
+        const isValid = validExtensions.includes(extension) || url.includes('video') || url.includes('mp4');
+        console.log("URL validation details:", {
+          url: url,
+          extension: extension,
+          isValid: isValid
+        });
+        return isValid;
+      } catch (error) {
+        console.log("URL validation error:", error);
+        return false;
+      }
+    },
+
+    resetState: function () {
+      // Clear caches
+      this.thumbnailCache.clear();
+      this.hoverPreviewCache.clear();
+      
+      // Reset video state
+      this.currentTime = 0;
+      this.duration = 0;
+      this.isDragging = false;
+      
+      // Clear timers
+      if (this.hoverThrottleTimer) {
+        clearTimeout(this.hoverThrottleTimer);
+        this.hoverThrottleTimer = null;
+      }
+      
+      if (this.hoverDebounceTimer) {
+        clearTimeout(this.hoverDebounceTimer);
+        this.hoverDebounceTimer = null;
+      }
+      
+      // Clear pending generation
+      if (this.pendingThumbnailGeneration) {
+        this.pendingThumbnailGeneration.cancelled = true;
+        this.pendingThumbnailGeneration = null;
+      }
+      
+      // Clear UI
+      document.getElementById("timelineThumbnails").innerHTML = 
+        '<div class="timeline-scrubber" id="timelineScrubber"></div>';
+      document.getElementById("mainThumbnail").classList.remove("show");
+      document.getElementById("timestampDisplay").textContent = "0.0s";
+      document.getElementById("videoInfo").innerHTML = "";
+      this.hideHoverPreview();
+    },
+
     loadVideo: function () {
+      console.log("loadVideo called with URL:", this.videoUrl);
       this.updateStatus("Loading video metadata...");
       this.showProgress(true);
       this.updateProgress(10);
+      
+      // Disable load button during loading
+      const loadBtn = document.getElementById("loadVideoBtn");
+      loadBtn.disabled = true;
+      loadBtn.textContent = "Loading...";
+      
       const video = document.getElementById("videoElement");
+      console.log("Setting video src to:", this.videoUrl);
       video.src = this.videoUrl;
       video.load();
+      console.log("Video load() called");
     },
 
     handleVideoMetadata: function () {
+      console.log("handleVideoMetadata called");
       const video = document.getElementById("videoElement");
       this.duration = video.duration;
+      console.log("Video duration:", this.duration);
 
       if (
         isNaN(this.duration) ||
@@ -201,6 +324,11 @@ document.addEventListener("DOMContentLoaded", () => {
               "success"
             );
             this.hideProgress();
+            
+            // Re-enable load button
+            const loadBtn = document.getElementById("loadVideoBtn");
+            loadBtn.disabled = false;
+            loadBtn.textContent = "Load Video";
           }
         });
       }
@@ -547,6 +675,13 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error(title, error);
       this.updateStatus(`${title}: ${error.message}`, "error");
       this.hideProgress();
+      
+      // Re-enable load button
+      const loadBtn = document.getElementById("loadVideoBtn");
+      if (loadBtn) {
+        loadBtn.disabled = false;
+        loadBtn.textContent = "Load Video";
+      }
     },
 
     cleanup: function () {
