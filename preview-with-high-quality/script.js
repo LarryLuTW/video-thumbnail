@@ -11,6 +11,8 @@ document.addEventListener("DOMContentLoaded", () => {
     hoverDebounceTimer: null,
     pendingThumbnailGeneration: null,
     thumbnailCache: new Map(),
+    thumbnailQueue: [],
+    isGeneratingThumbnail: false,
 
     init: function () {
       this.bindEvents();
@@ -162,6 +164,10 @@ document.addEventListener("DOMContentLoaded", () => {
       // Clear caches
       this.thumbnailCache.clear();
       this.hoverPreviewCache.clear();
+      
+      // Clear thumbnail queue
+      this.thumbnailQueue = [];
+      this.isGeneratingThumbnail = false;
       
       // Reset video state
       this.currentTime = 0;
@@ -330,30 +336,149 @@ document.addEventListener("DOMContentLoaded", () => {
             loadBtn.disabled = false;
             loadBtn.textContent = "Load Video";
           }
+        }, (error) => {
+          // Handle failed thumbnail generation
+          console.warn(`Failed to generate thumbnail at ${timestamp.toFixed(1)}s:`, error);
+          
+          // Show a placeholder instead of staying on "Loading..."
+          img.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='68' viewBox='0 0 120 68'%3E%3Crect width='120' height='68' fill='%23f0f0f0'/%3E%3Ctext x='60' y='34' text-anchor='middle' dominant-baseline='middle' font-family='Arial' font-size='12' fill='%23666'%3E⚠️%3C/text%3E%3C/svg%3E";
+          img.classList.add("loaded", "error");
+          loadingDiv.style.display = "none";
+          loadedCount++;
+
+          this.updateProgress(50 + (loadedCount / this.thumbnailSegments) * 50);
+
+          if (loadedCount === this.thumbnailSegments) {
+            this.updateStatus(
+              "Timeline ready! Click or drag to scrub through the video.",
+              "success"
+            );
+            this.hideProgress();
+            
+            // Re-enable load button
+            const loadBtn = document.getElementById("loadVideoBtn");
+            loadBtn.disabled = false;
+            loadBtn.textContent = "Load Video";
+          }
         });
       }
     },
 
-    generateThumbnailAtTime: function (timestamp, callback) {
+    generateThumbnailAtTime: function (timestamp, successCallback, errorCallback) {
       // Check cache first
       const cacheKey = timestamp.toFixed(3);
       if (this.thumbnailCache.has(cacheKey)) {
-        callback(this.thumbnailCache.get(cacheKey));
+        successCallback(this.thumbnailCache.get(cacheKey));
         return;
       }
 
-      // Always use temporary video for simplicity
-      this.generateThumbnailWithTempVideo(
+      // Add to queue
+      this.thumbnailQueue.push({
         timestamp,
-        (dataUrl) => {
-          // Cache the result
-          this.thumbnailCache.set(cacheKey, dataUrl);
-          callback(dataUrl);
-        },
-        (error) => {
-          console.error("Failed to generate thumbnail:", error);
+        cacheKey,
+        successCallback,
+        errorCallback
+      });
+
+      // Process queue
+      this.processThumbnailQueue();
+    },
+
+    processThumbnailQueue: function() {
+      if (this.isGeneratingThumbnail || this.thumbnailQueue.length === 0) {
+        return;
+      }
+
+      this.isGeneratingThumbnail = true;
+      const request = this.thumbnailQueue.shift();
+      
+      // Double-check cache in case it was added while in queue
+      if (this.thumbnailCache.has(request.cacheKey)) {
+        request.successCallback(this.thumbnailCache.get(request.cacheKey));
+        this.isGeneratingThumbnail = false;
+        this.processThumbnailQueue(); // Process next
+        return;
+      }
+
+      this.generateSingleThumbnail(request)
+        .then(() => {
+          this.isGeneratingThumbnail = false;
+          this.processThumbnailQueue(); // Process next
+        })
+        .catch(() => {
+          this.isGeneratingThumbnail = false;
+          this.processThumbnailQueue(); // Process next
+        });
+    },
+
+    generateSingleThumbnail: function(request) {
+      return new Promise((resolve, reject) => {
+        const video = document.getElementById("videoElement");
+        const originalTime = video.currentTime;
+        
+        const seekedHandler = () => {
+          video.removeEventListener("seeked", seekedHandler);
+          
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = 120;
+            canvas.height = 68;
+
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+            
+            // Cache the result
+            this.thumbnailCache.set(request.cacheKey, dataUrl);
+            
+            // Restore original time
+            video.currentTime = originalTime;
+            
+            request.successCallback(dataUrl);
+            resolve();
+          } catch (error) {
+            // Restore original time
+            video.currentTime = originalTime;
+            
+            if (request.errorCallback) {
+              request.errorCallback(error);
+            }
+            reject(error);
+          }
+        };
+
+        const errorHandler = () => {
+          video.removeEventListener("error", errorHandler);
+          video.removeEventListener("seeked", seekedHandler);
+          
+          // Restore original time
+          video.currentTime = originalTime;
+          
+          if (request.errorCallback) {
+            request.errorCallback(new Error("Video seeking failed"));
+          }
+          reject(new Error("Video seeking failed"));
+        };
+
+        video.addEventListener("seeked", seekedHandler, { once: true });
+        video.addEventListener("error", errorHandler, { once: true });
+        
+        try {
+          video.currentTime = request.timestamp;
+        } catch (error) {
+          video.removeEventListener("seeked", seekedHandler);
+          video.removeEventListener("error", errorHandler);
+          
+          // Restore original time
+          video.currentTime = originalTime;
+          
+          if (request.errorCallback) {
+            request.errorCallback(error);
+          }
+          reject(error);
         }
-      );
+      });
     },
 
     startDragging: function (e) {
@@ -414,19 +539,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const video = document.getElementById("videoElement");
 
-      const seekTimeout = setTimeout(() => {
-        this.handleError(
-          "Timeout",
-          new Error("Seeking to the requested timestamp timed out.")
-        );
-      }, 30000);
-
       const seekAndCapture = () => {
         try {
           video.currentTime = this.currentTime;
 
           const seekedHandler = () => {
-            clearTimeout(seekTimeout);
             video.removeEventListener("seeked", seekedHandler);
 
             try {
@@ -452,7 +569,6 @@ document.addEventListener("DOMContentLoaded", () => {
             once: true,
           });
         } catch (error) {
-          clearTimeout(seekTimeout);
           this.handleError("Seeking error", error);
         }
       };
@@ -733,11 +849,22 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       };
 
-      const timeoutId = setTimeout(() => {
+      let hasSucceeded = false;
+      let hasErrored = false;
+
+      const handleSuccess = (dataUrl) => {
+        if (hasSucceeded || hasErrored) return;
+        hasSucceeded = true;
         cleanup();
-        errorCallback &&
-          errorCallback(new Error("Thumbnail generation timeout"));
-      }, 10000);
+        successCallback(dataUrl);
+      };
+
+      const handleError = (error) => {
+        if (hasSucceeded || hasErrored) return;
+        hasErrored = true;
+        cleanup();
+        errorCallback && errorCallback(error);
+      };
 
       tempVideo.addEventListener("loadedmetadata", () => {
         // Check for cancellation before seeking
@@ -745,16 +872,17 @@ document.addEventListener("DOMContentLoaded", () => {
           this.pendingThumbnailGeneration &&
           this.pendingThumbnailGeneration.cancelled
         ) {
-          clearTimeout(timeoutId);
           cleanup();
           return;
         }
-        tempVideo.currentTime = timestamp;
+        try {
+          tempVideo.currentTime = timestamp;
+        } catch (error) {
+          handleError(new Error("Failed to seek to timestamp"));
+        }
       });
 
       tempVideo.addEventListener("seeked", () => {
-        clearTimeout(timeoutId);
-
         // Check for cancellation before generating thumbnail
         if (
           this.pendingThumbnailGeneration &&
@@ -773,21 +901,46 @@ document.addEventListener("DOMContentLoaded", () => {
           ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
 
           const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
-          cleanup();
-          successCallback(dataUrl);
+          handleSuccess(dataUrl);
         } catch (error) {
           console.error("Failed to generate thumbnail with temp video:", error);
-          cleanup();
-          errorCallback && errorCallback(error);
+          handleError(error);
         }
       });
 
-      tempVideo.addEventListener("error", () => {
-        clearTimeout(timeoutId);
-        cleanup();
-        errorCallback &&
-          errorCallback(new Error("Temporary video failed to load"));
+      tempVideo.addEventListener("error", (e) => {
+        const errorMsg = e.target.error ? e.target.error.message : "Video failed to load";
+        handleError(new Error(errorMsg));
       });
+
+      tempVideo.addEventListener("loadstart", () => {
+        console.log(`Loading started for timestamp: ${timestamp.toFixed(3)}s`);
+      });
+
+      tempVideo.addEventListener("canplay", () => {
+        // Fallback: if seeked event doesn't fire, try to generate thumbnail anyway
+        setTimeout(() => {
+          if (!hasSucceeded && !hasErrored) {
+            console.log(`Fallback thumbnail generation for timestamp: ${timestamp.toFixed(3)}s`);
+            try {
+              const canvas = document.createElement("canvas");
+              canvas.width = 120;
+              canvas.height = 68;
+
+              const ctx = canvas.getContext("2d");
+              ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
+
+              const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+              handleSuccess(dataUrl);
+            } catch (error) {
+              handleError(new Error("Fallback thumbnail generation failed"));
+            }
+          }
+        }, 1000);
+      });
+
+      // Load the video
+      tempVideo.load();
     },
   };
 
